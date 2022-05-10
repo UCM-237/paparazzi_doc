@@ -1,0 +1,450 @@
+\chapter{Módulo de comunicación serie}
+
+El módulo de comunicación serie permite que Paparazzi establezca comunicación bidireccional con otro dispositivo a través de uno de los puertos serie. Con este módulo implementaremos el protocolo de comunicaciones entre paparazzi y la Raspberry (o el companion computer) correspondiente.
+
+\section{Protocolo de comunicación}
+
+La comunicación entre Paparazzi y el (companion Computer) CC será bidireccional. Todos los mensjaes llevarán una marca de tiempo. Los mensajes establecidos son los siguientes:
+\begin{enumerate}
+	\item Mensajes desde Paparazzi al CC
+	\begin{enumerate}
+		\item Mensaje con los datos de telemetría. 
+		\item Mensaje indicando al CC que puede proceder a realizar las medidas.
+		\item Mensaje solicitando al CC la posición de la sonda.
+	\end{enumerate}
+	\item Mensajes desde el CC al Paparazzi
+	\begin{enumerate}
+			\item Mensaje de respuesta a la solicitud de medida.
+			\item Mensaje periódico con la profundidad de la sonda (durante la medida).
+			\item Mensaje de finalización de medida.
+			\item Mensaje de respuesta a la solicitud de posición de la sonda con la posición.
+	\end{enumerate}	
+\end{enumerate}
+
+\subsection{Configuración del puerto serie}
+
+La configuración del puerto serie será la estándar con velocidad de $9600$ baudios, tabla \ref{tab:1}.
+\begin{table}[h]
+	\centering
+	\caption{Configuración del puerto serie}
+\begin{tabular}{|c|c|}
+	\hline
+	\textbf{Parámetro} & \textbf{Valor} \\ \hline \hline
+	Velocidad  & $9600$ (baudios) \\\hline 
+	Paridad & ninguna  \\ \hline
+	Bits & $8$ \\ \hline 
+	Bits de parada & $1$  \\ \hline
+	Control de flujo & ninguno \\ \hline
+\end{tabular}
+\label{tab:1}
+\end{table}
+
+
+\subsection{Comunicación desde paparazzi}
+
+Paparazzi enviará tres mensajes diferentes al CC. Uno de ellos periódico, el mensaje de la telemetría y el resto puntualmente.
+
+Todos los mensajes comienzan con un byte que contiene el código ASCII de la letra \textbf{P} indicando que dicho mensaje procede de paparazzi. Todos los mensajes terminan con $2$ bytes que corresponden al checksum.
+
+Las cantidades numéricas enteras sin signo se codifican usando el formato Little Endian (el byte más significativo ocupa la posición de menor índice en el mensaje). Por ejemplo si queremos enviar el número decimal $72$ como hexadecimal de $2$ bytes lo codificaremos como: ${0x00,0x48}$.
+
+Las cantidades numéricas con signo se codifican de igual manera que las enteras sin signo pero el byte de menor índice se usa para indicar el signo: $0x01$ si el signo es negativo y $0x00$ si es positivo. Por ejemplo si usamos $3$ bytes para codificar el número $-72$ lo codificaremos como ${0x01,0x00,0x48}$ y el número $72$ será ${0x00,0x00,0x48}$.
+
+\subsubsection{Mensaje de telemetría}
+
+El mensaje de telemetría es un mensaje periódico que envía paparazzi al CC con los datos de telemetría: GPS y medida de Sonar. Tiene una longitud de $25$ bytes y la estructura en bytes especificada en la tabla \ref{tab:2}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de telemetría}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "P"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "T"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-8$	& Longitud ($grad \cdot 10^{7}$)	& Entero con signo	&   $5$ \\  \hline
+		$9-13$	& Latitud ($grad \cdot 10^{7}$)		& Entero con signo	&  	$5$ \\  \hline
+		$14-17$	& Altitud ($mm$)					& Entero sin signo	&   $4$ \\  \hline
+		$18-21$	& Distancia sonar ($mm$)			& Entero sin signo	&   $4$ \\  \hline
+		$22$	& Confianza sonar ($\%$)			& Entero sin signo	&   $1$ \\  \hline
+		$23-24$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab:2}
+\end{table}
+
+En la tabla \ref{tab:3} puede verse un ejemplo de uno de estos mensajes.
+
+\begin{table}
+	\centering
+	\caption{Ejemplo de un mensaje de telemetría}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x50$			& "P"	& Byte sincronía	\\ \hline
+		$1$				&  $0x54$			& "T"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x01$			&  \multirow{5}{*}{$-37260579$ ($grad \cdot 10^{7}$) } &  \multirow{5}{*}{Longitud}  \\
+		$5$				&  $0x02$			&  &   \\ 	
+		$6$				&  $0x38$			&  &    \\ 	
+		$7$				&  $0x8D$			&  &    \\ 	
+		$8$				&  $0x23$			&   &   \\ \hline
+		$9$				&  $0x00$			& \multirow{5}{*}{$404506308$ ($grad \cdot 10^{7}$) } &  \multirow{5}{*}{Latitud}   \\
+		$10$				&  $0x18$			&  &     \\ 	
+		$11$				&  $0x1C$			&  &      \\ 	
+		$12$				&  $0x46$			&  &      \\ 	
+		$13$				&  $0xC4$			&  &      \\ \hline
+		$14$				&  $0x00$			& \multirow{4}{*}{$702385$ (mm) } & \multirow{4}{*}{Altitud}\\
+		$15$				&  $0x0A$			&   &     \\ 	
+		$16$				&  $0xB7$			&   &         \\ 	
+		$17$				&  $0xB1$			&   &        \\ \hline
+		$18$				&  $0x00$			& \multirow{4}{*}{$8219$ (mm) } & \multirow{4}{*}{Distancia sonar}\\
+		$19$				&  $0x00$			&     &     \\ 	
+		$20$				&  $0x20$			&     &     \\ 	
+		$21$				&  $0x1B$			&     &     \\ 	\hline
+		$22$				&  $0x64$			& $100 \%$ &     Confianza \\ \hline
+		$23$				&  $0x05$			&  \multirow{2}{*}{6405}	& \multirow{2}{*}{checksum} \\
+		$24$				&  $0x19$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab:3}
+\end{table}
+
+\subsubsection{Mensaje indicando al CC que puede proceder a realizar las medidas}
+
+El mensaje de inicio de medidas es un mensaje puntual que envía paparazzi al CC indicando que puede comenzar a descender la sona para tomar medidas. Incluye los datos de telemetría: GPS y medida de Sonar. Tiene una longitud de $25$ bytes y la estructura en bytes especificada en la tabla \ref{tab:4}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de inicio de medida}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "P"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "M"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-8$	& Longitud ($grad \cdot 10^{7}$)	& Entero con signo	&   $5$ \\  \hline
+		$9-13$	& Latitud ($grad \cdot 10^{7}$)		& Entero con signo	&  	$5$ \\  \hline
+		$14-17$	& Altitud ($mm$)					& Entero sin signo	&   $4$ \\  \hline
+		$18-21$	& Distancia sonar ($mm$)			& Entero sin signo	&   $4$ \\  \hline
+		$22$	& Confianza sonar ($\%$)			& Entero sin signo	&   $1$ \\  \hline
+		$23-24$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab:4}
+\end{table}
+
+En la tabla \ref{tab:5} puede verse un ejemplo de un mensaje de inicio de medida.
+
+\begin{table}
+	\centering
+	\caption{Ejemplo de un mensaje de inicio de medida}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x50$			& "P"	& Byte sincronía	\\ \hline
+		$1$				&  $0x4D$			& "M"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x01$			&  \multirow{5}{*}{$-37260579$ ($grad \cdot 10^{7}$) } &  \multirow{5}{*}{Longitud}  \\
+		$5$				&  $0x02$			&  &   \\ 	
+		$6$				&  $0x38$			&  &    \\ 	
+		$7$				&  $0x8D$			&  &    \\ 	
+		$8$				&  $0x23$			&   &   \\ \hline
+		$9$				&  $0x00$			& \multirow{5}{*}{$404506308$ ($grad \cdot 10^{7}$) } &  \multirow{5}{*}{Latitud}   \\
+		$10$				&  $0x18$			&  &     \\ 	
+		$11$				&  $0x1C$			&  &      \\ 	
+		$12$				&  $0x46$			&  &      \\ 	
+		$13$				&  $0xC4$			&  &      \\ \hline
+		$14$				&  $0x00$			& \multirow{4}{*}{$702385$ (mm) } & \multirow{4}{*}{Altitud}\\
+		$15$				&  $0x0A$			&   &     \\ 	
+		$16$				&  $0xB7$			&   &         \\ 	
+		$17$				&  $0xB1$			&   &        \\ \hline
+		$18$				&  $0x00$			& \multirow{4}{*}{$8219$ (mm) } & \multirow{4}{*}{Distancia sonar}\\
+		$19$				&  $0x00$			&     &     \\ 	
+		$20$				&  $0x20$			&     &     \\ 	
+		$21$				&  $0x1B$			&     &     \\ 	\hline
+		$22$				&  $0x64$			& $100 \%$ &     Confianza \\ \hline
+		$23$				&  $0x05$			&  \multirow{2}{*}{1311}	& \multirow{2}{*}{checksum} \\
+		$24$				&  $0x1F$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab:5}
+\end{table}
+
+\subsubsection{Mensaje solicitando al CC la posición de la sonda}
+
+El mensaje de solicitud de poición de la sonda es un mensaje puntual que envía paparazzi al CC solicitando la posición de la sonda. Tiene una longitud de $6$ bytes y la estructura en bytes especificada en la tabla \ref{tab6}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de solicitud de posición de la sonda}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "P"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "S"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab6}
+\end{table}
+
+En la tabla \ref{tab7} puede verse un ejemplo de un mensaje de solicitud de posición de la sonda.
+
+\begin{table}[h]
+	\centering
+	\caption{Ejemplo de solicitud de posición de la sonda}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x50$			& "P"	& Byte sincronía	\\ \hline
+		$1$				&  $0x53$			& "S"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x00$			&  \multirow{2}{*}{235}	& \multirow{2}{*}{checksum} \\
+		$5$				&  $0xEB$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab7}
+\end{table}
+
+\subsection{Comunicación desde el companion computer}
+
+El CC enviará a paparazzi cuatro mensajes diferentes. Uno de esos mensajes es periódico y se enviará cada segundo mientras la sonda está midiendo. El resto son mensajes puntuales. 
+
+Todos los mensajes comienzan con un byte que contiene el código ASCII de la letra \textbf{R} indicando que dicho mensaje procede de la Raspberry. Todos los mensajes terminan con $2$ bytes que corresponden al checksum.
+
+Las cantidades numéricas se codifican de la misma manera que en el caso de la comunicación desde paparazzi al CC.
+
+\subsubsection{Mensaje de respuesta a la solicitud de medida}
+
+El mensaje de respuesta a la solicitud de medida se enviará por parte del CC a paparazzi como respuesta al mensaje de solicitud de medida.
+
+Tiene una longitud de $6$ bytes y la estructura en bytes especificada en la tabla \ref{tab8}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de respuesta a la solicitud de medida}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "R"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "O"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab8}
+\end{table}
+
+En la tabla \ref{tab9} puede verse un ejemplo de un mensaje de respuesta a la solicitud de medida.
+
+\begin{table}
+	\centering
+	\caption{Ejemplo de respuesta a la solicitud de medida}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x52$			& "R"	& Byte sincronía	\\ \hline
+		$1$				&  $0x4F$			& "O"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x00$			&  \multirow{2}{*}{233}	& \multirow{2}{*}{checksum} \\
+		$5$				&  $0xE9$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab9}
+\end{table}
+
+\subsubsection{Mensaje periódico con la profundidad de la sonda (durante la medida)}
+
+El mensaje periódico con la profundidad de la sonda se enviará por parte del CC a paparazzi con una periodicidad de $1s$ mientras la sonda está midiendo.
+
+Tiene una longitud de $8$ bytes y la estructura en bytes especificada en la tabla \ref{tab10}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje periódico con la profundidad de la sonda}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "R"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "M"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Profundidad (mm)  				& Entero sin signo	&   $2$ \\  \hline
+		$6-7$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+\label{tab10}
+\end{table}
+
+En la tabla \ref{tab11} puede verse un ejemplo de un mensaje de profundidad de la sonda.
+
+\begin{table}[h]
+	\centering
+	\caption{Ejemplo de mensaje de profundidad de la sonda}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x52$			& "R"	& Byte sincronía	\\ \hline
+		$1$				&  $0x4D$			& "M"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x3D$			& \multirow{2}{*}{$15820$ mm} & \multirow{2}{*}{Profundidad} \\
+		$5$				&  $0xCC$			&  & \\ \hline	
+		$6$				&  $0x01$			&  \multirow{2}{*}{496}	& \multirow{2}{*}{checksum} \\
+		$7$				&  $0xF0$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab11}
+\end{table}
+
+
+\subsubsection{Mensaje de finalización de medida}
+
+El mensaje de finalización de la medida se enviará por parte del CC a paparazzi al terminar el procedimiento de medida de la sonda.
+
+Tiene una longitud de $8$ bytes y la estructura en bytes especificada en la tabla \ref{tab12}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje  de finalización de medida}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "R"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "F"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Profundidad (mm)  				& Entero sin signo	&   $2$ \\  \hline
+		$6-7$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+\label{tab12}
+\end{table}
+
+En la tabla \ref{tab13} puede verse un ejemplo de un mensaje de finalización de medida.
+
+\begin{table}[h]
+	\centering
+	\caption{Ejemplo de mensaje de finalización de medida}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x52$			& "R"	& Byte sincronía	\\ \hline
+		$1$				&  $0x46$			& "M"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x00$			& \multirow{2}{*}{$0$ mm} & \multirow{2}{*}{Profundidad} \\
+		$5$				&  $0x00$			&  & \\ \hline	
+		$6$				&  $0x00$			&  \multirow{2}{*}{224}	& \multirow{2}{*}{checksum} \\
+		$7$				&  $0xE0$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab13}
+\end{table}
+
+\subsubsection{Mensaje de respuesta a la solicitud de posición de la sonda con la posición}
+
+El mensaje de respuesta a la solicitud de posición de la sonda se enviará por parte del CC a paparazzi como respuesta al mensaje de solicitud de posición por parte de paparazzi.
+
+Tiene una longitud de $8$ bytes y la estructura en bytes especificada en la tabla \ref{tab14}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de posición de la sonda}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía "R"				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje "P"				& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)				& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Profundidad (mm)  				& Entero sin signo	&   $2$ \\  \hline
+		$6-7$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab14}
+\end{table}
+
+En la tabla \ref{tab15} puede verse un ejemplo de un mensaje de posición de la sonda.
+
+\begin{table}[h]
+	\centering
+	\caption{Ejemplo de mensaje de posición de la sonda}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x52$			& "R"	& Byte sincronía	\\ \hline
+		$1$				&  $0x50$			& "P"	& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x12$			& \multirow{2}{*}{$4776$ mm} & \multirow{2}{*}{Profundidad} \\
+		$5$				&  $0xA8$			&  & \\ \hline	
+		$6$				&  $0x01$			&  \multirow{2}{*}{420}	& \multirow{2}{*}{checksum} \\
+		$7$				&  $0xA4$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab15}
+\end{table}
+
+
+\section{Archivo de configuración}
+
+El archivo de configuración de este módulo es \textit{conf/modules/serial\_com.xml}.
+
+Este archivo contiene:
+\begin{enumerate}
+	\item La descripción de los parámetros que habrá que configurar: el puerto de conexión y la velocidad
+	\begin{verbatim}
+	<!DOCTYPE module SYSTEM "module.dtd">
+	
+	<module name="serial_com" dir="com">
+	<doc>
+	<description>
+	Decoder for serial protocol
+	
+	Data are extracted and sent from a serial link 
+	</description>
+	<configure name="SERIAL_UART" value="UARTX" description="SERIAL on which other device is connected"/>
+	<configure name="SERIAL_BAUD" value="B9600" description="UART Baudrate, default to 9600"/>
+	</doc>
+	
+	\end{verbatim}
+	
+	\item Los parámetros para el envío de los mensajes
+	\begin{verbatim}
+	<settings>
+	<dl_settings>
+	<dl_settings NAME="SR_Com">
+	<dl_setting MAX="1" MIN="0" STEP="1" VAR="serial_msg_setting" shortname="stream" module="modules/com/serial_com" values="FALSE|TRUE"/>
+	</dl_settings>
+	</dl_settings>
+	</settings>
+	\end{verbatim}
+	
+	\item Las dependencias. En este caso el módulo solo depende de \textit{uart}
+	\begin{verbatim}
+	<dep>
+	<depends>uart</depends>
+	</dep>
+	\end{verbatim}
+	
+	\item Las funciones programadas en el módulo (ver \ref{sec:2}) que permiten iniciar la tarea, reaccionar a eventos y enviar periódicamente los mensajes.
+	\begin{verbatim}
+	<header>
+	<file name="serial_com.h"/>
+	</header>
+	<init fun="serial_init()"/>
+	<periodic fun="serial_ping()" freq="10" autorun="TRUE"/>
+	<event fun="serial_event()"/>
+	\end{verbatim}
+	
+	\item Los parámetros por defecto para el \textit{makefile}
+	
+	\begin{verbatim}
+	<makefile>
+	<configure name="SERIAL_UART" default = "UART5" case="upper|lower"/> <!-- Revisar estos configure | Mirar gps_ublox.xml -->
+	<configure name="SERIAL_BAUD" default="B9600"/>
+	<file name="serial_com.c"/>
+	<define name="USE_$(SERIAL_UART_UPPER)"/> <!-- for uart_arch-->
+	<define name="SERIAL_DEV" value="$(SERIAL_UART_LOWER)"/>
+	<define name="$(SERIAL_UART_UPPER)_BAUD" value="$(SERIAL_BAUD)"/>
+	</makefile>
+	</module>
+	\end{verbatim}
+
+\end{enumerate}
+
+
+\section{Archivos de código} \label{sec:2}
+
+
