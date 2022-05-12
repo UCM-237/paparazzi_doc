@@ -1,0 +1,460 @@
+\chapter{Módulo de comunicación con el sonar de Bluerobotics}
+En este capítulo se describe el software desarrollado para el módulo de comunicación con el \href{https://bluerobotics.com/store/sensors-sonars-cameras/sonar/ping-sonar-r2-rp/}{ping sonar de Bluerobotics}.
+
+\section{Archivo de configuración}\label{sec:1}
+
+El archivo de configuración del sonar es \texttt{sonar\_bluerobotics.xml}. 
+
+En este achivo xml se configura la ejecución del módulo. 
+\begin{itemize}
+	\item En primer lugar (tras la descripción) se configura el envío de los mensajes de telemetría.
+	\begin{lstlisting}[style=XML]
+	<!DOCTYPE module SYSTEM "module.dtd">
+	
+	<module name="sonar_bluerobotics" dir="sonar">
+	<doc>
+	<description>
+	Decoder for ping protocol from Blue
+	
+	Data are extracted from a serial link 
+	</description>
+	<configure name="SONAR_UART" value="UARTX" description="UART on which sonar is connected"/>
+	<configure name="SONAR_BAUD" value="B115200" description="UART Baudrate, default to 115200"/>
+	</doc>
+	<settings>
+	<dl_settings>
+	<dl_settings NAME="BR_Sonar">
+	<dl_setting MAX="1" MIN="0" STEP="1" VAR="sonar_stream_setting" shortname="stream" module="modules/sonar/sonar_bluerobotics" values="FALSE|TRUE"/>
+	</dl_settings>
+	</dl_settings>
+	</settings>
+	\end{lstlisting}
+	
+	\item Se establecen las dependencias. En este caso puesto que la comunicación con el sonar es vía puerto serie la única dependencia es con la biblioteca de la uart.
+	\begin{lstlisting}[style=XML]
+	<dep>
+	<depends>uart</depends>
+	</dep>
+	\end{lstlisting}
+	
+	\item Se configura el fichero de cabecera y las funciones de la biblioteca del sonar que van a invocarse. Estas funciones (que se encuentran descritas en la sección \ref{sec:3}) son: la función de inicialización, la función que se ejecuta periódicamente para enviar mensajes o decodificar mensajes si hay un mensaje completo y la función que se invoca cuando hay un evento en el puerto serie.
+	\begin{lstlisting}[style=XML]
+	<header>
+	<file name="sonar_bluerobotics.h"/>
+	</header>
+	<init fun="sonar_init()"/>
+	<periodic fun="sonar_ping()" freq="5" autorun="TRUE"/>
+	<event fun="sonar_event()"/>
+	\end{lstlisting}
+	
+	\item Por último se configuran los parámetros del puerto para el makefile.
+	\begin{lstlisting}[style=XML]
+	<makefile>
+	<configure name="SONAR_UART" default = "UART3" case="upper|lower"/>
+	<configure name="SONAR_BAUD" default="B115200"/>
+	<file name="sonar_bluerobotics.c"/>
+	<define name="USE_$(SONAR_UART_UPPER)"/> <!-- for uart_arch-->
+	<define name="SONAR_DEV" value="$(SONAR_UART_LOWER)"/>
+	<define name="$(SONAR_UART_UPPER)_BAUD" value="$(SONAR_BAUD)"/>
+	</makefile>
+	</module>
+	\end{lstlisting}
+\end{itemize}
+
+\subsection{Configuración del puerto serie}
+En la tabla \ref{tab:1} se muestra la configuración del puerto serie.
+\begin{table}[h]
+	\centering
+	\caption{Configuración del puerto serie}
+	\begin{tabular}{|c|c|}
+		\hline
+		\textbf{Parámetro} & \textbf{Valor} \\ \hline \hline
+		Velocidad  & $115200$ (baudios) \\\hline 
+		Paridad & ninguna  \\ \hline
+		Bits & $8$ \\ \hline 
+		Bits de parada & $1$  \\ \hline
+		Control de flujo & ninguno \\ \hline
+	\end{tabular}
+	\label{tab:1}
+\end{table}
+
+\section{Formato de los mensajes implementados} \label{sec:2}
+
+\subsection{Mensajes de paparazzi al sonar}
+
+Se han implementado los siguientes mensajes:
+\begin{itemize}
+	\item Request protocol version. Solicita al sonar la versión de protocolo que está usando (tabla \ref{tab:2}).
+	\item Request simple distance. Solicita al sonar un mensaje con la distancia medida y la confianza (tabla \ref{tab:3}).
+	\item Request simple distance start. Solicita al sonar que envíe cada $250$ (ms) el mensaje con la distancia simple (contiene distancia medida y confianza) (tabla \ref{tab:4}).
+	\item Request simple distance start. Solicita al sonar que cese de enviar el mensaje de distancia simple (tabla \ref{tab:5}).
+	\item Request speed of sound. Solicita al sonar que envíe el valor de la velocidad del sonido que está usando (tabla \ref{tab:6}).
+	\item Request device id. Solicita al sonar que envíe su identificador (tabla \ref{tab:7}).
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\caption{Request protocol version}
+\begin{tabular}{|c|c|c|}
+	\hline
+	\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+	$0$		&$0x42$		& ``B'' \\ \hline
+	$1$		&$0x52$		& ``R'' \\ \hline
+	$2$		&$0x02$		& 2\_L Payload length \\ \hline
+	$3$		&$0x00$		& 0\_H Payload length \\ \hline
+	$4$		&$0x06$		& 6\_L Message ID \\ \hline
+	$5$		&$0x00$		& 0\_H Message ID \\ \hline
+	$6$		&$0x00$		& 0    Source ID \\ \hline 
+	$7$		&$0x00$		& 0    Device ID \\ \hline
+	$8$		&$0x05$		& 5\_L Requested Message ID \\ \hline
+	$9$		&$0x00$		& 0\_H Requested Message ID\\ \hline  
+	$10$	&$0xA1$		& A1\_L Checksum\\ \hline   
+	$11$	&$0x00$		& 0\_H Checksum\\ \hline  
+\end{tabular}
+\label{tab:2}
+\end{table}	
+
+\begin{table}[h]
+	\centering
+	\caption{Request distance simple}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x02$		& 2\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x06$		& 6\_L Message ID \\ \hline
+		$5$		&$0x00$		& 0\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&$0xBB$		& BB\_L Requested Message ID \\ \hline
+		$9$		&$0x04$		& 04\_H Requested Message ID\\ \hline  
+		$10$	&$0x5C$		& 5C\_L Checksum\\ \hline   
+		$11$	&$0x01$		& 01\_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:3}
+\end{table}
+
+\begin{table}[h]
+	\centering
+	\caption{Request distance simple streaming start}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x02$		& 2\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x78$		& 78\_L Message ID \\ \hline
+		$5$		&$0x05$		& 05\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&$0xBB$		& BB\_L Requested Message ID \\ \hline
+		$9$		&$0x04$		& 04\_H Requested Message ID\\ \hline  
+		$10$	&$0xD3$		& D3\_L Checksum\\ \hline   
+		$11$	&$0x01$		& 01\_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:4}
+\end{table}
+
+\begin{table}[h]
+	\centering
+	\caption{Request distance simple streaming stop}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x02$		& 2\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x79$		& 79\_L Message ID \\ \hline
+		$5$		&$0x05$		& 05\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&$0xBB$		& BB\_L Requested Message ID \\ \hline
+		$9$		&$0x04$		& 04\_H Requested Message ID\\ \hline  
+		$10$	&$0xD4$		& D4\_L Checksum\\ \hline   
+		$11$	&$0x01$		& 01\_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:5}
+\end{table}
+
+\begin{table}[h]
+	\centering
+	\caption{Request speed of sound}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x02$		& 2\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x06$		& 06\_L Message ID \\ \hline
+		$5$		&$0x00$		& 00\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&$0xB3$		& B3\_L Requested Message ID \\ \hline
+		$9$		&$0x04$		& 04\_H Requested Message ID\\ \hline  
+		$10$	&$0x54$		& 54\_L Checksum\\ \hline   
+		$11$	&$0x01$		& 01\_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:6}
+\end{table}
+
+\begin{table}[h]
+	\centering
+	\caption{Request device id}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x02$		& 2\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x06$		& 06\_L Message ID \\ \hline
+		$5$		&$0x00$		& 00\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&$0xB1$		& B1\_L Requested Message ID \\ \hline
+		$9$		&$0x04$		& 04\_H Requested Message ID\\ \hline  
+		$10$	&$0x52$		& 52\_L Checksum\\ \hline   
+		$11$	&$0x01$		& 01\_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:7}
+\end{table}
+
+\subsection{Mensajes del sonar a paparazzi}
+
+Se ha implementado la decodificación de los siguientes mensajes:
+\begin{itemize}
+	\item Distancia simple (tabla \ref{tab:8}).
+	\item Version de protocolo (tabla \ref{tab:9}).
+	\item Velocidad del sonido (tabla \ref{tab:10}).
+	\item Identificador del dispositivo (tabla \ref{tab:11}).
+\end{itemize}
+
+\begin{table}[h]
+	\centering
+	\caption{Distancia simple (simple distance)}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x05$		& 5\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x04$		& 04\_L Message ID \\ \hline
+		$5$		&$0x00$		& 00\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8-11$	&			& Distancia (mm) \\ \hline
+		$12$	&			& Confianza (\%)\\ \hline  
+		$13$	&			& \_L Checksum\\ \hline   
+		$14$	&			& \_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:8}
+\end{table}
+
+\begin{table}[h]
+	\centering
+	\caption{Versión del protocolo (protocol version)}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x03$		& 3\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x03$		& 03\_L Message ID \\ \hline
+		$5$		&$0x00$		& 00\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&			& Versión \\ \hline
+		$9$		&			& Subversión \\ \hline  
+		$10$		&			& Parche \\ \hline  
+		$11$	&			& \_L Checksum\\ \hline   
+		$12$	&			& \_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:9}
+\end{table}
+
+
+\begin{table}[h]
+	\centering
+	\caption{Velocidad del sonido}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x04$		& 4\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x02$		& 02\_L Message ID \\ \hline
+		$5$		&$0x00$		& 00\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8-11$	&			& Velocidad sonido (mm/s) \\ \hline
+		$12$	&			& \_L Checksum\\ \hline   
+		$13$	&			& \_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:10}
+\end{table}
+
+
+\begin{table}[h]
+	\centering
+	\caption{Identificador del sonar}
+	\begin{tabular}{|c|c|c|}
+		\hline
+		\textbf{Byte}	&\textbf{Valor (hexadecimal)} &\textbf{Significado} \\ \hline  \hline
+		$0$		&$0x42$		& ``B'' \\ \hline
+		$1$		&$0x52$		& ``R'' \\ \hline
+		$2$		&$0x01$		& 1\_L Payload length \\ \hline
+		$3$		&$0x00$		& 0\_H Payload length \\ \hline
+		$4$		&$0x05$		& 05s\_L Message ID \\ \hline
+		$5$		&$0x00$		& 00\_H Message ID \\ \hline
+		$6$		&$0x00$		& 0    Source ID \\ \hline 
+		$7$		&$0x01$		& 1    Device ID \\ \hline
+		$8$		&			& ID \\ \hline
+		$9$		&			& \_L Checksum\\ \hline   
+		$10$	&			& \_H Checksum\\ \hline  
+	\end{tabular}
+	\label{tab:11}
+\end{table}
+
+
+\section{Código}\label{sec:3}
+
+\subsection{Estructuras}
+
+Se ha implementado la siguiente estructura para almacenar los datos que se reciben del sonar:
+\begin{lstlisting}[style=C]
+
+struct sonar_parse_t {
+uint16_t payload_len;
+uint16_t msg_id;
+uint8_t src_id;
+uint8_t dev_id;
+
+uint8_t msgData[SONAR_MAX_PAYLOAD] __attribute__((aligned));
+uint8_t status;
+
+uint8_t error_cnt;
+uint8_t error_last;
+
+uint16_t ck;
+bool msg_available;
+
+uint8_t protocol_version;
+uint8_t protocol_subversion;
+uint8_t protocol_patch;
+
+uint32_t sound_vel;
+uint32_t distance;
+uint8_t confidence;
+};
+\end{lstlisting}
+
+
+\subsection{Funciones auxiliares}
+Se han implementado las siguientes funciones auxiliares que serán necesarias para la codificación y decodificación de los mensajes:
+\begin{itemize}
+	\item Función que calcula la longitud total del mensaje
+	\begin{lstlisting}[style=C]
+		static uint32_t msgLength(void);
+	\end{lstlisting}	
+
+	\item Función que calcula el checksum del mensaje, lo retorna y lo almacena en el campo \texttt{ck} de la estructura \texttt{sonar\_parse\_t}.
+	\begin{lstlisting}[style=C]
+	static uint32_t calculateChecksum(void);
+	\end{lstlisting}
+	
+		\item Función que convierte en entero sin signo una cadena de bytes de longitud \texttt{length}.
+	\begin{lstlisting}[style=C]
+	unsigned int byteToint(uint8_t * bytes,int length);
+	\end{lstlisting}
+	
+\end{itemize}
+
+
+\subsection{Función \texttt{get}}
+Esta función retorna un puntero a la estructura \texttt{sonar\_parse\_t} que contiene los datos leidos del sonar.	Esta función será la que invoquemos desde otros módulos cuando queramos leer las medidas del sonar.
+
+	\begin{lstlisting}[style=C]
+struct sonar_parse_t * sonar_get(void);
+	\end{lstlisting}
+	
+	
+\subsection{Funciones para decodificar mensajes del sonar}
+	
+	
+\begin{itemize}
+	\item Esta función recibe un byte leido por el puerto serie y lo va almacenando en el campo \texttt{msgData} de la estructura \texttt{sonar\_parse\_t}. Comprueba que los dos primeros bytes del mensaje son correctos. En caso de no serlo o de recibir un valor inesperado almacena un error. Cuando ha recibido y almacenado un mensaje completo escribe el valor $true$ en el campo \texttt{message\_available} de la estructura para indicarlo.
+		\begin{lstlisting}[style=C]
+	static void sonar_parse(uint8_t byte);
+	\end{lstlisting}
+	
+	\item Esta función actúa cuando hay un mensaje completo disposible ($message\_available=true$). Analiza el valor del campo \texttt{msg\_id} y llama a la función que corresponda según el tipo de mensaje. Si el valor no coincide con ninguno de los valores predeterminados lo indica en el campo \texttt{error\_last}. Esta función también comprueba que el valor del \textit{checksum} del mensaje es correcto.
+	\begin{lstlisting}[style=C]
+	void sonar_read_message(void);
+	\end{lstlisting}
+	
+	\item Esta función decodifica el mensaje que devuelve el identificador del sonar. Almacena el identificador en el campo \texttt{dev\_id}.
+	\begin{lstlisting}[style=C]
+	static void sonar_parse_device_id(void);
+	\end{lstlisting}
+	
+	\item Esta función decodifica el mensaje que devuelve la versión del protocolo usado. Almacena los resultados en los campos \texttt{protocol\_version}, \texttt{protocol\_subversion} y \texttt{protocol\_patch}.
+		\begin{lstlisting}[style=C]
+	static void sonar_parse_firmware(void);
+	\end{lstlisting}
+	
+	\item Esta función se encarga de la decodificación del mensaje que devuelve el valor de la velocidad del sonido empleada. Almacena el valor obtenido en el campo \texttt{sound\_vel}.
+		\begin{lstlisting}[style=C]
+	static void sonar_parse_sound_speed(void);
+	\end{lstlisting}
+
+	\item Esta función decodifica el mensaje de distancia sencillo. Almacena la distancia medida en el campo \texttt{distance} y la confianza en el campo \texttt{confidence}.
+			\begin{lstlisting}[style=C]
+	static void sonar_parse_simple_distance(void);
+	\end{lstlisting}
+	
+\end{itemize}
+
+\subsection{Función para el envío de bytes por el puerto serie}
+
+Esta función recibe un puntero a un array que contiene los bytes que se quieren enviar y la longitud de dicho array. Se encarga de ir enviando uno a uno los bytes por el puerto serie.
+			\begin{lstlisting}[style=C]
+static void sonar_send_msg(uint8_t len, uint8_t *bytes);
+\end{lstlisting}
+
+Hay también una función que se invoca periódicamente (sección \ref{sec:2}) que se encarga de enviar el mensaje seleccionado por el puerto serie. Para ello comprueba que se ha completado la recepción de un mensaje completo y selecciona con una estructura \texttt{switch-case} el mensaje que se va a enviar. Es la variable global \texttt{modo} la que indica el mensaje seleccionado. Dicha variable puede tomar los siguientes valores: \texttt{BR\_RQ\_SONAR\_START} si se quiere enviar un mensaje petición de envío en streaming del mensaje de distancia sencillo (ver \ref{sec:1}), \texttt{BR\_RQ\_SONAR\_STOP} si se quiere solicitar que se deje de enviar en streaming el mensaje de distancia sencillo (ver \ref{sec:1}), \texttt{BR\_RQ\_FIRMWARE} si se quiere solicitar la versión del protocolo que emplea el sonar, \texttt{BR\_RQ\_SOUND\_VEL} si se quiere solicitar el envío de la velocidad del sonido, \texttt{BR\_RQ\_DISTANCE\_SIMPLE} si se quiere solicitar el envío de un mensaje con la distancia sencilla o \texttt{BR\_RQ\_DEVICE\_ID} si se quiere solicitar el envío del identificador del sonar (ver \ref{sec:1}). En el caso de que la variable \texttt{message\_type} tenga un valor distinto de los tres anteriores se indicará con un error \texttt{SONAR\_BR\_ERR\_UNEXPECTED}. 
+
+
+\begin{lstlisting}[style=C]
+void serial_ping(void);
+\end{lstlisting}
+
+\subsection{Función para la recepción de bytes por el puerto serie}
+
+Esta función se invoca cuando hay un evento asociado al puerto serie. Comprueba si hay un byte disponible y si es así lo recupera y se lo envía a la función \texttt{sonar\_parse}. En el caso de que al recibir ese byte se complete un mensaje (el campo \texttt{available} es $true$) invoca a la función \texttt{sonar\_read\_message} para que empiece la decodificación.
+			\begin{lstlisting}[style=C]
+void sonar_event(void);
+\end{lstlisting}
+
+
+\subsection{Otras funciones}
+
+ Finalmente tenemos otras dos funciones:
+\begin{itemize}
+	\item Función para inicializar la comunicación serie. Esta función ha de invocarse en el archivo de configuración como función de \texttt{init} (ver \ref{sec:2}).
+	\begin{lstlisting}[style=C]
+	void sonar_init(void);
+	\end{lstlisting}
+	\item Función para enviar los datos por telemetría. Esta función hace uso del mensaje \texttt{BR\_SONAR} de la telemetría para mostrar en el interfaz gráfico los mensajes que se reciben del sonar.
+	\begin{lstlisting}[style=C]
+	static void send_telemetry(struct transport_tx *trans, struct link_device *dev);
+	\end{lstlisting}
+\end{itemize}
+
