@@ -18,6 +18,11 @@ La comunicación entre Paparazzi y el (companion Computer) CC será bidirecciona
 			\item Mensaje periódico con la profundidad de la sonda (durante la medida).
 			\item Mensaje de finalización de medida.
 			\item Mensaje de respuesta a la solicitud de posición de la sonda con la posición.
+			 \item Mensajes de error
+			 \begin{enumerate}
+			 	\item Profundidad insuficiente
+			 	\item Error en el mecanismo de subida o bajada de la sonda	
+			 \end{enumerate}
 	\end{enumerate}	
 \end{enumerate}
 
@@ -112,7 +117,7 @@ En la tabla \ref{tab:3} puede verse un ejemplo de uno de estos mensajes.
 
 \subsubsection{Mensaje indicando al CC que puede proceder a realizar las medidas}
 
-El mensaje de inicio de medidas es un mensaje puntual que envía paparazzi al CC indicando que puede comenzar a descender la sona para tomar medidas. Incluye los datos de telemetría: GPS y medida de Sonar. Tiene una longitud de $25$ bytes y la estructura en bytes especificada en la tabla \ref{tab:4}.
+El mensaje de inicio de medidas es un mensaje puntual que envía paparazzi al CC indicando que puede comenzar a descender la sona para tomar medidas. Incluye los datos de telemetría: GPS y medida de Sonar. El byte de intervalo entre medidas indica si las medidas han de tomarse cada $1$ (m), en ese caso el byte valdrá $1$ o cada $0.5$ (m) en cuyo caso el byte valdrá $0$. Tiene una longitud de $26$ bytes y la estructura en bytes especificada en la tabla \ref{tab:4}.
 
 \begin{table}[h]
 	\centering
@@ -127,7 +132,8 @@ El mensaje de inicio de medidas es un mensaje puntual que envía paparazzi al CC
 		$14-17$	& Altitud ($mm$)					& Entero sin signo	&   $4$ \\  \hline
 		$18-21$	& Distancia sonar ($mm$)			& Entero sin signo	&   $4$ \\  \hline
 		$22$	& Confianza sonar ($\%$)			& Entero sin signo	&   $1$ \\  \hline
-		$23-24$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
+		$23$	& Intervalo entre medidas ($0$,$1$)	& Entero sin signo	&   $1$ \\  \hline		
+		$24-25$	& Checksum 							& Entero sin signo	&   $2$ \\  \hline
 	\end{tabular}
 	\label{tab:4}
 \end{table}
@@ -162,8 +168,9 @@ En la tabla \ref{tab:5} puede verse un ejemplo de un mensaje de inicio de medida
 		$20$				&  $0x20$			&     &     \\ 	
 		$21$				&  $0x1B$			&     &     \\ 	\hline
 		$22$				&  $0x64$			& $100 \%$ &     Confianza \\ \hline
-		$23$				&  $0x05$			&  \multirow{2}{*}{1311}	& \multirow{2}{*}{checksum} \\
-		$24$				&  $0x1F$			&     &     \\ \hline	
+		$23$				&  $0x00$			& Medidas cada $0.5$ (m) &     Intervalo entre medidas \\ \hline
+		$24$				&  $0x05$			&  \multirow{2}{*}{1311}	& \multirow{2}{*}{checksum} \\
+		$25$				&  $0x1F$			&     &     \\ \hline	
 		
 		
 	\end{tabular}
@@ -374,6 +381,79 @@ En la tabla \ref{tab15} puede verse un ejemplo de un mensaje de posición de la 
 		
 	\end{tabular}
 	\label{tab15}
+\end{table}
+
+\subsubsection{Mensajes de error}
+\paragraph{Profundidad insuficiente.} Este mensaje se enviará cuando se solicite realizar medidas pero la profundidad indicada sea insuficiente para bajar la sonda con seguridad ($depth<1$ (m)). 
+
+Tiene una longitud de $6$ bytes y la estructura en bytes especificada en la tabla \ref{tab16}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de error: profundidad insuficiente}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía ``R''				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje ``N''					& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)					& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Checksum 				  				& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab16}
+\end{table}
+
+En la tabla \ref{tab17} puede verse un ejemplo de un mensaje de error por profundidad insuficiente.
+
+\begin{table}[h]
+	\centering
+	\caption{Ejemplo de mensaje de error por profundidad insuficiente}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x52$			& ``R''		& Byte sincronía	\\ \hline
+		$1$				&  $0x4E$			& ``N''		& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x00$			&  \multirow{2}{*}{232}	& \multirow{2}{*}{checksum} \\
+		$5$				&  $0xE8$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab17}
+\end{table}
+
+\paragraph{Error en la subida de la sonda.} Este mensaje se enviará cuando se active el motor para subir la sonda pero no se llegue a activar en el tiempo estimado el sensor de final de carrera, indicando que la sonda se ha perdido. 
+
+Tiene una longitud de $6$ bytes y la estructura en bytes especificada en la tabla \ref{tab18}.
+
+\begin{table}[h]
+	\centering
+	\caption{Estructura del mensaje de error: sonda perdida}
+	\begin{tabular}{|c|c|c|c|}\hline 
+		\textbf{Posición}	& \textbf{Valor} & \textbf{Tipo} &\textbf{Número de bytes} \\ \hline \hline 
+		$0$		& Byte de sincronía ``R''				& ASCII	 			&	$1$ \\  \hline
+		$1$		& Tipo de mensaje ``L''					& ASCII	 			&	$1$ \\  \hline
+		$2-3$	& Marca de tiempo (s)					& Entero sin signo	&   $2$ \\  \hline
+		$4-5$	& Checksum 				  				& Entero sin signo	&   $2$ \\  \hline
+	\end{tabular}
+	\label{tab18}
+\end{table}
+
+En la tabla \ref{tab19} puede verse un ejemplo de un mensaje de error por pérdida de sonda.
+
+\begin{table}[h]
+	\centering
+	\caption{Ejemplo de mensaje de error por pérdida de sonda}
+	\begin{tabular}{|c|c|c|c|}\hline
+		\textbf{Byte} 	&	\textbf{Valor (en hexadecimal)}	&\textbf{Valor}	&\textbf{Significado} \\ \hline \hline
+		$0$ 			&  $0x52$			& ``R''		& Byte sincronía	\\ \hline
+		$1$				&  $0x4C$			& ``L''		& Tipo mensaje		\\ \hline
+		$2$				&  $0x00$			& \multirow{2}{*}{$72$ segundos} & \multirow{2}{*}{Tiempo} \\
+		$3$				&  $0x48$			&  & \\ \hline	
+		$4$				&  $0x00$			&  \multirow{2}{*}{230}	& \multirow{2}{*}{checksum} \\
+		$5$				&  $0xE6$			&     &     \\ \hline	
+		
+		
+	\end{tabular}
+	\label{tab19}
 \end{table}
 
 
